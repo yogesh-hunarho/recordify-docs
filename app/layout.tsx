@@ -2,14 +2,16 @@ import {Footer, Layout, Navbar} from 'nextra-theme-docs'
 import {Banner, Head} from 'nextra/components'
 import {getPageMap} from 'nextra/page-map'
 import 'nextra-theme-docs/style.css'
+import Link from 'next/link'
 
 const navbar = (
     <Navbar
         logo={<img src="/images/logo.png" alt="Logo" width={100} height={20}/>}
     >
-         <a
-            href="/recordify-1.0.2.zip"
-            download
+         <Link
+            // href="/recordify-1.0.2.zip"
+            // download
+            href="/download"
             style={{
             marginLeft: '1rem',
             backgroundColor: '#0070f3',
@@ -20,7 +22,7 @@ const navbar = (
             }}
         >
             Download Extension
-        </a>
+        </Link>
     </Navbar>
 )
 
