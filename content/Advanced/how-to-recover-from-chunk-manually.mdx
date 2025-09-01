@@ -1,0 +1,190 @@
+---
+title: How to Recover the Video from Chunks Manually
+description: Comprehensive guide to recover and merge videos from recorded chunks stored on the user's PC.
+---
+
+import { ImageZoom } from 'nextra/components'
+
+# 🧩 Recover Video from IndexedDB Chunks
+
+This method uses the **File System Access API** to export all chunks from IndexedDB, avoiding download limits.  
+It will also generate a `chunks.txt` file ready for `ffmpeg`.
+
+---
+
+## Steps
+
+1. Open your extension page → **Inspect** → **Console**.  
+2. Paste and run the following script.  
+   It injects a button into the page, so the file picker counts as a **user gesture**.
+
+
+```js
+(() => {
+  const btn = document.createElement("button");
+  btn.textContent = "Save all chunks to a folder";
+  Object.assign(btn.style, {
+    position: "fixed", top: "10px", right: "10px", zIndex: 999999,
+    padding: "10px 14px", borderRadius: "8px", border: "1px solid #ccc",
+    background: "#fff", cursor: "pointer", boxShadow: "0 2px 8px rgba(0,0,0,.15)"
+  });
+  document.body.appendChild(btn);
+
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    try {
+      const root = await window.showDirectoryPicker({ id: "screenity-chunks-export" });
+      const sub = await root.getDirectoryHandle(
+        `chunks_export_${new Date().toISOString().replace(/[:.]/g, "-")}`, { create: true }
+      );
+
+      const db = await new Promise((resolve, reject) => {
+        const req = indexedDB.open("chunks", 2);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+      const store = db.transaction("keyvaluepairs", "readonly").objectStore("keyvaluepairs");
+
+      const items = [];
+      await new Promise((resolve, reject) => {
+        const cur = store.openCursor();
+        cur.onsuccess = (e) => {
+          const c = e.target.result;
+          if (c) { const v = c.value; items.push({ index: v.index, blob: v.chunk }); c.continue(); }
+          else resolve();
+        };
+        cur.onerror = reject;
+      });
+      items.sort((a, b) => a.index - b.index);
+
+      let i = 0;
+      for (const { index, blob } of items) {
+        const name = `chunk_${String(index).padStart(5, "0")}.webm`;
+        const fh = await sub.getFileHandle(name, { create: true });
+        const w = await fh.createWritable();
+        await w.write(blob);
+        await w.close();
+        if (++i % 100 === 0) console.log(`Saved ${i}/${items.length}...`);
+      }
+
+      const listTxt = items.map(({ index }) =>
+        `file 'chunk_${String(index).padStart(5,"0")}.webm'`).join("\n");
+      const listHandle = await sub.getFileHandle("chunks.txt", { create: true });
+      const lw = await listHandle.createWritable();
+      await lw.write(new Blob([listTxt], { type: "text/plain" }));
+      await lw.close();
+
+      console.log(`✅ Done. Saved ${items.length} files + chunks.txt in:`, sub);
+      alert("Saved all chunks + chunks.txt. Now run ffmpeg in that folder.");
+    } catch (e) {
+      console.error(e);
+      alert("Failed: " + (e && e.message ? e.message : e));
+    } finally {
+      btn.disabled = false;
+    }
+  });
+})();
+````
+
+---
+
+## ⚠️ Security Note
+
+When pasting code into DevTools, Chrome will show a warning:
+
+> Don’t paste code into the DevTools Console that you don’t understand or haven’t reviewed yourself. This could allow attackers to steal your identity or take control of your computer.
+
+To proceed, type **`allow pasting`** in the console and press **Enter**.
+
+<ImageZoom src="/images/extension/allow-pasting.png" alt="allow-pasting" style={{ height: 200 }} />
+
+---
+
+## Exporting Chunks
+
+Once pasted, you’ll see a new button:
+
+**`Save all chunks to a folder`**
+
+* Select a folder where you want to save the chunk files.
+* The process may take time if there are many chunks.
+* Progress will appear in the console:
+
+```txt
+Saved 100/1000...
+```
+
+When finished, you will see all chunks (`chunk_00001.webm`, `chunk_00002.webm`, …) and a `chunks.txt` file in your selected folder.
+
+<ImageZoom src="/images/extension/advanced-recover.png" alt="advanced-recover" style={{ height: 300 }} />
+
+---
+
+
+Got it ✅ Here’s the **ready-to-use MDX format** for Nextra (with your button, headings, and code blocks kept clean):
+
+````mdx
+## 🛠️ Merging Chunks (Two Ways)
+
+---
+
+## First Way (Manual)
+
+1. Open a terminal (**CMD/PowerShell on Windows**, **Terminal on Linux/Mac**) **inside the folder** where chunks are saved.
+2. Join all chunks into one raw `.webm` file:
+
+### Windows (CMD)
+
+```bat
+copy /b chunk_*.webm all.webm
+````
+
+### Linux/Mac
+
+```bash
+cat chunk_*.webm > all.webm
+```
+
+➡️ This creates **`all.webm`**.
+
+---
+
+## 🎬 Fixing the Container with FFmpeg
+
+Some raw merges need fixing. Use **ffmpeg**:
+
+```bash
+ffmpeg -i all.webm -c copy fixed.webm
+```
+
+If the above fails (container issues), re-encode instead:
+
+```bash
+ffmpeg -i all.webm -c:v libvpx-vp9 -c:a libopus fixed.webm
+```
+
+✅ You now have a playable **`fixed.webm`** video.
+
+---
+
+## Second Way (Batch File – Windows Only)
+
+If you’re on **Windows**, you can automate merging with a `.bat` file.
+<br/>
+<a
+style={{marginLeft: '1rem',backgroundColor: '#0070f3',color: '#fff',padding: '6px 12px', borderRadius: '6px',textDecoration: 'none'}}
+href="/video/merge\_chunks.bat"
+download>⬇️ Download merge\_chunks.bat </a>
+
+Place the downloaded **`merge_chunks.bat`** in the same folder as your `chunks.txt` and chunk files, then **double-click it**.
+It will automatically create `all.webm` (and can run ffmpeg if included in the script).
+
+---
+
+✨ **Notes**:
+
+* The **First Way** works on all OS (Windows/Mac/Linux).
+* The **Second Way** is Windows-only and just a convenience shortcut.
+
+
+---
